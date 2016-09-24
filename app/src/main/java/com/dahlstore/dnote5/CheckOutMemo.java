@@ -1,30 +1,39 @@
 package com.dahlstore.dnote5;
 
-import android.app.Activity;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.media.MediaScannerConnection;
+import android.net.Uri;
+import android.os.Environment;
+import android.os.ParcelFileDescriptor;
+import android.provider.MediaStore;
 import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextUtils;
 import android.text.TextWatcher;
-import android.util.Log;
-import android.view.KeyEvent;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.Toast;
-
+import java.io.File;
+import java.io.IOException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 
 public class CheckOutMemo extends AppCompatActivity {
-
     public static final int ADD_REQUEST_CODE = 1;
     public static final int EDIT_REQUEST_CODE = 2;
+    public static final int REQUEST_IMAGE_CAPTURE = 1337;
+    public String fileName;
+    public Bitmap bitmap;
     private int position;
     EditText editableTitle;
     EditText editableContent;
-
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -33,20 +42,71 @@ public class CheckOutMemo extends AppCompatActivity {
         Intent intent = getIntent();
         editableTitle = (EditText) findViewById(R.id.editHeader);
         editableContent = (EditText) findViewById(R.id.editBodyText);
-        //Setting text for my editableTitle and EditableContent.
         editableTitle.setText(intent.getStringExtra("header"));
         editableContent.setText(intent.getStringExtra("bodyText"));
-        checkIfUserChangedOrWroteAnyText();
+        //checkIfUserChangedOrWroteAnyText();
         //Declaring keyword and default position.
         position = intent.getIntExtra("position", 0);
+        checkIfUserChangedOrWroteAnyText();
+    }
 
+    public void capturePhoto(View view) {
+        Intent takePictureIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+        // Ensure that there's a camera activity to handle the intent
+        if (takePictureIntent.resolveActivity(getPackageManager()) != null) {
+            // Create the File where the photo should go
+            File photoFile = null;
+            try {
+                photoFile = createImageFile();
+            } catch (IOException ex) {
+                // Error occurred while creating the File
+
+            }
+            // Continue only if the File was successfully created
+            if (photoFile != null) {
+                takePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT,
+                        Uri.fromFile(photoFile));
+                startActivityForResult(takePictureIntent, REQUEST_IMAGE_CAPTURE);
+            }
+        }
+    }
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data){
+        if (requestCode == REQUEST_IMAGE_CAPTURE && resultCode == RESULT_OK) {
+
+            try {
+                loadImageFromFile();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+    public void loadImageFromFile() throws IOException {
+
+        ImageView view = (ImageView)this.findViewById(R.id.primeImage);
+        view.setVisibility(View.VISIBLE);
+        int targetW = view.getWidth();
+        int targetH = view.getHeight();
+
+        // Get the dimensions of the bitmap
+        BitmapFactory.Options bmOptions = new BitmapFactory.Options();
+        bmOptions.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(fileName, bmOptions);
+        int photoW = bmOptions.outWidth;
+        int photoH = bmOptions.outHeight;
+
+        // Determine how much to scale down the image
+        int scaleFactor = Math.min(photoW/targetW, photoH/targetH);
+
+        // Decode the image file into a Bitmap sized to fill the View
+        bmOptions.inJustDecodeBounds = false;
+        bmOptions.inSampleSize = scaleFactor;
+        bitmap = BitmapFactory.decodeFile(fileName, bmOptions);
+        view.setImageBitmap(bitmap);
 
     }
 
-
-
-    public void onSaveClick(View view) {
-        // Retrieving the text in my editableContent and editableTitle.
+    public void onSaveClick(View view){
         String editableContentString = editableContent.getText().toString();
         String editableTitleString = editableTitle.getText().toString();
         if(TextUtils.isEmpty(editableContentString) && TextUtils.isEmpty(editableTitleString)) {
@@ -57,29 +117,28 @@ public class CheckOutMemo extends AppCompatActivity {
             if ((TextUtils.isEmpty(editableTitleString))) {
                 editableTitleString.equals(editableContentString);
                 Intent intent = new Intent();
+                //createImageFromBitmap();
                 intent.putExtra("header", editableContent.getText().toString());
                 intent.putExtra("position", position);
+                intent.putExtra("photo", fileName);
 
                 //Sending userInput back to MainActivity.
-                setResult(Activity.RESULT_OK, intent);
+                setResult(AppCompatActivity.RESULT_OK, intent);
                 finish();
 
             } else {
                 Intent intent = new Intent();
+                //createImageFromBitmap();
                 intent.putExtra("header", editableTitle.getText().toString());
                 intent.putExtra("bodyText", editableContent.getText().toString());
+                intent.putExtra("photo", fileName);
                 intent.putExtra("position", position);
-
                 //Sending userInput back to MainActivity.
-                setResult(Activity.RESULT_OK, intent);
+                setResult(AppCompatActivity.RESULT_OK, intent);
                 finish();
-
             }
-
         }
-
     }
-
 
     public void cancelButtonClickedAfterEdit() {
         Button button = (Button) findViewById(R.id.bigCancelButton);
@@ -90,10 +149,6 @@ public class CheckOutMemo extends AppCompatActivity {
             }
         });
     }
-
-    //onKeyDown method added, to prevent the user to back get out of the unsaved memo before saving or discarding dialogfragment.
-
-
 
     public void openDialogFragment(final View v){
 
@@ -125,10 +180,8 @@ public class CheckOutMemo extends AppCompatActivity {
 
     }
 
-
-
     public void checkIfUserChangedOrWroteAnyText() {
-        editableContent.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+                editableContent.setOnFocusChangeListener(new View.OnFocusChangeListener() {
             @Override
             public void onFocusChange(View v, final boolean hasFocus) {
                 if (hasFocus) {
@@ -187,85 +240,40 @@ public class CheckOutMemo extends AppCompatActivity {
 
     }
 
+    public File createImageFile() throws IOException {
+        // Create an image file name
+        String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
+        String imageFileName = "JPEG_" + timeStamp + "_";
+        String folder_main = "DNote";
+        String path = Environment.getExternalStoragePublicDirectory(
+                Environment.DIRECTORY_PICTURES).toString() + File.separator + folder_main;
+        File storageDir = new File(path);
+        if (!storageDir.exists()) {
+            storageDir.mkdir();
+        }
+        File image = File.createTempFile(
+                imageFileName,  /* prefix */
+                ".jpg",         /* suffix */
+                storageDir      /* directory */
+        );
 
-//
-//    @Override
-//    public boolean onKeyDown(int keyCode, KeyEvent event) {
-//        if (Integer.parseInt(android.os.Build.VERSION.SDK) > 5
-//                && keyCode == KeyEvent.KEYCODE_BACK
-//                && event.getRepeatCount() == 0) {
-//
-//            editableTitle.setOnFocusChangeListener(new View.OnFocusChangeListener() {
-//                @Override
-//                public void onFocusChange(final View v, final boolean hasFocus) {
-//                    if (hasFocus) {
-//
-//                        editableTitle.addTextChangedListener(new TextWatcher() {
-//                            @Override
-//                            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
-//
-//                            }
-//
-//                            @Override
-//                            public void onTextChanged(CharSequence s, int start, int before, int count) {
-//
-//
-//                            }
-//
-//                            @Override
-//                            public void afterTextChanged(Editable s) {
-//                                openDialogFragment(v);
-//                            }
-//                        });
-//
-//                    }
-//                }
-//            });
-//
-//
-//            editableContent.setOnFocusChangeListener(new View.OnFocusChangeListener() {
-//                @Override
-//                public void onFocusChange(final View v, final boolean hasFocus) {
-//                    if (hasFocus) {
-//
-//                        editableContent.addTextChangedListener(new TextWatcher() {
-//                            @Override
-//                            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
-//
-//                            }
-//
-//                            @Override
-//                            public void onTextChanged(CharSequence s, int start, int before, int count) {
-//
-//
-//                            }
-//
-//                            @Override
-//                            public void afterTextChanged(Editable s) {
-//
-//                                openDialogFragment(v);
-//                            }
-//                        });
-//
-//                    }
-//                }
-//            });
-//
-//            return true;
-//        }
-//        return super.onKeyDown(keyCode, event);
-//    }
-
-
-
-
+        // Save a file: path for use with ACTION_VIEW intents
+        fileName =  image.getAbsolutePath();
+        MediaScannerConnection.scanFile(getApplicationContext(), new String[]{image.getPath()}, null,
+                new MediaScannerConnection.OnScanCompletedListener() {
+                    @Override
+                    public void onScanCompleted(String path, Uri uri) {
+//                        Log.i(TAG, "Scanned " + path);
+                    }
+                });
+        return image;
+    }
 
 
     @Override
     public void onBackPressed() {
-        openDialogFragment(null);
+        //openDialogFragment(null);
     }
-
     public void onCancelClick(View view){
         finish();
 
